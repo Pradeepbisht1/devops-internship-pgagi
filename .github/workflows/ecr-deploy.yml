@@ -16,23 +16,21 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
 
-    - name: Log in to Amazon ECR
-      uses: aws-actions/amazon-ecr-login@v1
-
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v2
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ secrets.AWS_REGION }}
+        aws-region: ap-south-1
+
+    - name: Log in to Amazon ECR
+      uses: aws-actions/amazon-ecr-login@v1
 
     - name: Build & Push Backend to ECR
       run: |
         docker build -t $ECR_BACKEND_REPO backend
         docker tag $ECR_BACKEND_REPO:latest ${{ secrets.ECR_BACKEND_REPO }}:latest
         docker push ${{ secrets.ECR_BACKEND_REPO }}:latest
-      env:
-        ECR_BACKEND_REPO: ${{ secrets.ECR_BACKEND_REPO }}
 
     - name: Build & Push Frontend to ECR
       run: |
@@ -40,4 +38,5 @@ jobs:
         docker tag $ECR_FRONTEND_REPO:latest ${{ secrets.ECR_FRONTEND_REPO }}:latest
         docker push ${{ secrets.ECR_FRONTEND_REPO }}:latest
       env:
+        ECR_BACKEND_REPO: ${{ secrets.ECR_BACKEND_REPO }}
         ECR_FRONTEND_REPO: ${{ secrets.ECR_FRONTEND_REPO }}
