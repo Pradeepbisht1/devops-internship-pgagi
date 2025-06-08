@@ -1,125 +1,154 @@
-# DevOps Assignment
+# 🛠️ DevOps Production Deployment with AWS (ECS Fargate + Terraform + GitHub Actions)
 
-This project consists of a FastAPI backend and a Next.js frontend that communicates with the backend.
+This project demonstrates a full-fledged **CI/CD pipeline and infrastructure setup** for deploying a containerized application on AWS using:
 
-## Project Structure
+- **Docker** for containerization
+- **GitHub Actions** for CI/CD
+- **Amazon ECR** for container registry
+- **Amazon ECS Fargate** for container orchestration
+- **ALB (Application Load Balancer)** for traffic routing
+- **Terraform** for infrastructure as code
+- **CloudWatch** for monitoring and alerting
 
-```
-.
-├── backend/               # FastAPI backend
-│   ├── app/
-│   │   └── main.py       # Main FastAPI application
-│   └── requirements.txt    # Python dependencies
-└── frontend/              # Next.js frontend
-    ├── pages/
-    │   └── index.js     # Main page
-    ├── public/            # Static files
-    └── package.json       # Node.js dependencies
-```
+---
 
-## Prerequisites
+## 🐳 1. Dockerization
 
-- Python 3.8+
-- Node.js 16+
-- npm or yarn
+Both frontend and backend apps are containerized.
 
-## Backend Setup
-
-1. Navigate to the backend directory:
-   ```bash
-   cd backend
-   ```
-
-2. Create a virtual environment (recommended):
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: .\venv\Scripts\activate
-   ```
-
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. Run the FastAPI server:
-   ```bash
-   uvicorn app.main:app --reload --port 8000
-   ```
-
-   The backend will be available at `http://localhost:8000`
-
-## Frontend Setup
-
-1. Navigate to the frontend directory:
-   ```bash
-   cd frontend
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   # or
-   yarn
-   ```
-
-3. Configure the backend URL (if different from default):
-   - Open `.env.local`
-   - Update `NEXT_PUBLIC_API_URL` with your backend URL
-   - Example: `NEXT_PUBLIC_API_URL=https://your-backend-url.com`
-
-4. Run the development server:
-   ```bash
-   npm run dev
-   # or
-   yarn dev
-   ```
-
-   The frontend will be available at `http://localhost:3000`
-
-## Changing the Backend URL
-
-To change the backend URL that the frontend connects to:
-
-1. Open the `.env.local` file in the frontend directory
-2. Update the `NEXT_PUBLIC_API_URL` variable with your new backend URL
-3. Save the file
-4. Restart the Next.js development server for changes to take effect
-
-Example:
-```
-NEXT_PUBLIC_API_URL=https://your-new-backend-url.com
+**Example Dockerfile** (`./frontend/Dockerfile`)
+```Dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY . .
+RUN npm install
+RUN npm run build
+EXPOSE 3000
+CMD ["npm", "start"]
 ```
 
-## For deployment:
-   ```bash
-   npm run build
-   # or
-   yarn build
-   ```
+**Backend** runs on port `8000`.
 
-   AND
+---
 
-   ```bash
-   npm run start
-   # or
-   yarn start
-   ```
+## ⚙️ 2. CI/CD with GitHub Actions
 
-   The frontend will be available at `http://localhost:3000`
+**`.github/workflows/deploy.yml`** automates:
 
-## Testing the Integration
+- Docker image build for frontend & backend
+- Pushing to AWS ECR
 
-1. Ensure both backend and frontend servers are running
-2. Open the frontend in your browser (default: http://localhost:3000)
-3. If everything is working correctly, you should see:
-   - A status message indicating the backend is connected
-   - The message from the backend: "You've successfully integrated the backend!"
-   - The current backend URL being used
+```yaml
+on:
+  push:
+    branches:
+      - main
 
-## API Endpoints
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-- `GET /api/health`: Health check endpoint
-  - Returns: `{"status": "healthy", "message": "Backend is running successfully"}`
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
 
-- `GET /api/message`: Get the integration message
-  - Returns: `{"message": "You've successfully integrated the backend!"}`
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build & Push Backend to ECR
+        run: |
+          docker build -t backend ./backend
+          docker tag backend:latest ${{ secrets.ECR_BACKEND_REPO }}:latest
+          docker push ${{ secrets.ECR_BACKEND_REPO }}:latest
+
+      - name: Build & Push Frontend to ECR
+        run: |
+          docker build -t frontend ./frontend
+          docker tag frontend:latest ${{ secrets.ECR_FRONTEND_REPO }}:latest
+          docker push ${{ secrets.ECR_FRONTEND_REPO }}:latest
+```
+
+---
+
+## ☁️ 3. Terraform Architecture
+
+### 🔹 VPC Module
+- Public subnets in two AZs
+- Internet Gateway & Route Tables
+
+### 🔹 ECS Module
+- ECS Cluster
+- Task Definitions for frontend and backend
+- Services attached to ALB
+- Fargate launch type
+
+### 🔹 IAM
+- Execution role with least-privilege
+
+### 🔹 ALB
+- Listener + target groups (frontend & backend)
+- Health checks enabled
+
+### 🔹 Monitoring
+- CloudWatch log groups for each task
+- CPU & Memory alarms with SNS email alerts
+
+---
+
+## ⚙️ 4. Runtime Configuration
+
+The following variables are prompted at runtime or passed via `terraform.tfvars`:
+
+```hcl
+variable "alert_email"
+variable "cpu_threshold"   # e.g., 75
+variable "memory_threshold" # e.g., 75
+```
+
+---
+
+## ✅ 5. Health Checks
+
+- ALB health checks monitor task endpoints
+- Tasks marked unhealthy are replaced automatically
+
+---
+
+## 📦 Cleanup
+
+To destroy the entire infrastructure:
+```bash
+terraform destroy
+```
+
+---
+
+## 🧪 Testing the Setup
+
+- Visit ALB DNS to confirm frontend loads
+- API path `/api/*` should route to backend
+- Trigger high CPU to test alarm mail
+
+---
+
+## ✉️ Email Alerts
+
+- SNS configured to send email when alarms trigger
+- Email address is passed during deployment
+
+---
+
+## 📌 Author
+
+**Pradeep Bisht**
+Email: `pradeepbishtusar@gmail.com`
+Region: `ap-south-1 (Mumbai)`
